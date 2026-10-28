@@ -140,6 +140,16 @@ class DroidDeskPlatform {
     return Map<String, dynamic>.from(result);
   }
 
+  /// `{enabled, recommended}`; recommended is true on phones with about 4 GB of RAM or less.
+  static Future<Map<String, dynamic>> getLowMemoryMode() async {
+    final result = await _channel.invokeMethod('getLowMemoryMode');
+    return Map<String, dynamic>.from(result);
+  }
+
+  static Future<void> setLowMemoryMode(bool enabled) async {
+    await _channel.invokeMethod('setLowMemoryMode', {'enabled': enabled});
+  }
+
   // ── Bootstrap ──
 
   static Future<void> setupBootstrap() async {

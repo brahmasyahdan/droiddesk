@@ -67,7 +67,40 @@ class _DroidDeskAppState extends State<DroidDeskApp> {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: state.isSetupComplete ? const HomeScreen() : const WelcomeScreen(),
+      // Until the runtime reports its state, showing setup would invite re-running it.
+      home: !state.statusLoaded
+          ? const _StartupScreen()
+          : state.isSetupComplete
+              ? const HomeScreen()
+              : const WelcomeScreen(),
+    );
+  }
+}
+
+class _StartupScreen extends StatelessWidget {
+  const _StartupScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: DroidTheme.background,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Image.asset('assets/icons/logo.png', width: 88, height: 88),
+            ),
+            const SizedBox(height: 28),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -60,6 +60,43 @@ If you are launching the standalone binary directly from the terminal, simply pa
 ./my-electron-app --no-sandbox
 ```
 
+## Phones with 4 GB of RAM or Less
+
+On small phones Android ends the whole Linux session when memory runs out, so the desktop suddenly closes or turns black.
+
+### Low memory mode
+
+**Settings > Low memory mode** is on by default for phones with about 4 GB of RAM or less. It applies on the next desktop start and:
+
+- turns off the XFCE window compositor (it keeps an off-screen copy of every window),
+- turns off thumbnails in the file manager,
+- syncs the clipboard less often,
+- on rooted phones, limits glibc malloc arenas (`MALLOC_ARENA_MAX=2`) for Ubuntu apps.
+
+Switching it off restores the XFCE defaults once on the next start. XFCE settings you change by hand afterwards are left alone. While the desktop is open, DroidDesk also warns you when the phone is almost out of memory.
+
+### Keep Android from killing Linux processes (Android 12+)
+
+Android 12 and later stop apps that run more than 32 child processes ("phantom process killer"). A desktop with a browser easily goes over that limit. Turn the limit off once:
+
+- **Android 14 and later:** Developer options > **Disable child process restrictions**, or
+  ```bash
+  adb shell settings put global settings_enable_monitor_phantom_procs false
+  ```
+- **Android 12L and 13:**
+  ```bash
+  adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent"
+  adb shell "/system/bin/device_config put activity_manager max_phantom_processes 2147483647"
+  ```
+
+Also set **Settings > Battery optimization** to *Allowed* in DroidDesk.
+
+### Everyday tips
+
+- Run one large app at a time. A browser or Code OSS can use 1 GB or more each.
+- In Firefox, open `about:config` and set `dom.ipc.processCount` to `2` so it starts fewer content processes.
+- Close Android apps you are not using before you open the desktop.
+
 ## "VLC is not supposed to be run as root" Error
 
 VLC Media Player also has a hardcoded block preventing it from running as root. 

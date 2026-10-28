@@ -10,6 +10,9 @@ class AppState extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
 
   // ── Setup State ──
+  // False until the first runtime status arrives; until then setup state is unknown.
+  bool _statusLoaded = false;
+  bool get statusLoaded => _statusLoaded;
   bool _isBootstrapped = false;
   bool _isRunning = false;
   bool _hasRoot = false;
@@ -56,6 +59,10 @@ class AppState extends ChangeNotifier {
   // ── Auto Start ──
   bool _autoStartDesktop = false;
   bool get autoStartDesktop => _autoStartDesktop;
+  bool _lowMemoryMode = false;
+  bool get lowMemoryMode => _lowMemoryMode;
+  bool _lowMemoryRecommended = false;
+  bool get lowMemoryRecommended => _lowMemoryRecommended;
 
   // ── Getters ──
   ThemeMode get themeMode => _themeMode;
@@ -261,6 +268,9 @@ class AppState extends ChangeNotifier {
       _hasRoot = status['hasRoot'] == true;
       _installedDistro = status['distro']?.toString() ?? '';
       _installedDE = status['installedDE']?.toString() ?? '';
+      // Pick Home or setup now; the optional app list can fill in afterwards.
+      _statusLoaded = true;
+      notifyListeners();
 
       if (_installedDE.isNotEmpty) {
         await refreshOptionalApps();
@@ -269,6 +279,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to get runtime status: $e';
+      _statusLoaded = true;
       notifyListeners();
     }
   }
@@ -276,6 +287,9 @@ class AppState extends ChangeNotifier {
   Future<void> loadDeviceInfo() async {
     try {
       _deviceInfo = await DroidDeskPlatform.getDeviceInfo();
+      final lowMemory = await DroidDeskPlatform.getLowMemoryMode();
+      _lowMemoryMode = lowMemory['enabled'] == true;
+      _lowMemoryRecommended = lowMemory['recommended'] == true;
       notifyListeners();
     } catch (e) {
       // Non-fatal — continue without device info
@@ -300,6 +314,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('autoStartDesktop', value);
+  }
+
+  /// Takes effect the next time the desktop starts.
+  Future<void> setLowMemoryMode(bool value) async {
+    _lowMemoryMode = value;
+    notifyListeners();
+    await DroidDeskPlatform.setLowMemoryMode(value);
   }
 
   Future<bool> detectRootForSetup() async {

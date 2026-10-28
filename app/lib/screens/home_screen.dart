@@ -573,6 +573,26 @@ class HomeScreen extends StatelessWidget {
                             state.setAutoStartDesktop(!state.autoStartDesktop),
                       ),
                       _SettingsRow(
+                        icon: Icons.memory_rounded,
+                        color: DroidTheme.success,
+                        title: 'Low memory mode',
+                        subtitle: state.lowMemoryRecommended
+                            ? 'Recommended for this phone · applies on next start'
+                            : 'Lighter desktop for 4 GB phones · applies on next start',
+                        trailing: Switch.adaptive(
+                          value: state.lowMemoryMode,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: DroidTheme.accent,
+                          inactiveThumbColor: Colors.white,
+                          inactiveTrackColor: DroidTheme.surfaceBorder,
+                          trackOutlineColor:
+                              const WidgetStatePropertyAll(Colors.transparent),
+                          onChanged: state.setLowMemoryMode,
+                        ),
+                        onTap: () =>
+                            state.setLowMemoryMode(!state.lowMemoryMode),
+                      ),
+                      _SettingsRow(
                         icon: Icons.auto_awesome_rounded,
                         color: DroidTheme.accent,
                         title: 'Desktop Tools',

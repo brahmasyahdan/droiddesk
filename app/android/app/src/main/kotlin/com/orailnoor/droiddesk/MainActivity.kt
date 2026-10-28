@@ -18,6 +18,7 @@ import com.orailnoor.droiddesk.runtime.RootShell
 import com.orailnoor.droiddesk.runtime.AndroidAppBridge
 import com.orailnoor.droiddesk.runtime.AppUpdater
 import com.orailnoor.droiddesk.runtime.DesktopIntegration
+import com.orailnoor.droiddesk.runtime.LowMemoryProfile
 import com.orailnoor.droiddesk.view.AndroidSurfaceViewFactory
 import com.orailnoor.droiddesk.x11.X11ServerService
 import kotlin.concurrent.thread
@@ -316,9 +317,21 @@ class MainActivity : FlutterActivity() {
                         } else {
                             linuxRuntime.getGraphicsMode()
                         },
-                        "totalRamMB" to getTotalRam(),
+                        "totalRamMB" to LowMemoryProfile.totalRamMb(this),
                         "availableStorageMB" to getAvailableStorage()
                     ))
+                }
+
+                "getLowMemoryMode" -> {
+                    result.success(mapOf(
+                        "enabled" to LowMemoryProfile.isEnabled(this),
+                        "recommended" to LowMemoryProfile.isRecommended(this),
+                    ))
+                }
+
+                "setLowMemoryMode" -> {
+                    LowMemoryProfile.setEnabled(this, call.argument<Boolean>("enabled") ?: false)
+                    result.success(true)
                 }
 
                 // ── Root checks ──
@@ -1170,13 +1183,6 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             "unknown"
         }
-    }
-
-    private fun getTotalRam(): Long {
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val memInfo = android.app.ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memInfo)
-        return memInfo.totalMem / (1024 * 1024)
     }
 
     private fun getAvailableStorage(): Long {

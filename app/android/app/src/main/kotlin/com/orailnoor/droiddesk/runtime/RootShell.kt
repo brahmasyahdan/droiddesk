@@ -81,10 +81,11 @@ class RootShell(private val context: Context) {
 
     /**
      * Execute a shell command as root. Returns stdout+stderr combined.
+     * Pass [logCommand] = false for commands that carry user data, such as clipboard text.
      */
-    fun exec(command: String): String {
+    fun exec(command: String, logCommand: Boolean = true): String {
         val su = findSuPath() ?: throw RootException("No su binary found. Is this device rooted?")
-        return execSync(su, command)
+        return execSync(su, command, logCommand)
     }
 
     /**
@@ -99,7 +100,8 @@ class RootShell(private val context: Context) {
      * Run a command inside the chroot rootfs as root.
      */
     fun execInChroot(rootfs: File, command: String): String {
-        return exec("chroot ${rootfs.absolutePath} /bin/bash -c '$command'")
+        val quoted = "'" + command.replace("'", "'\"'\"'") + "'"
+        return exec("chroot ${rootfs.absolutePath} /bin/bash -c $quoted")
     }
 
     /**
@@ -110,8 +112,8 @@ class RootShell(private val context: Context) {
         cachedRootState = null
     }
 
-    private fun execSync(su: String, command: String): String {
-        Log.d(TAG, "su exec: $command")
+    private fun execSync(su: String, command: String, logCommand: Boolean = true): String {
+        if (logCommand) Log.d(TAG, "su exec: $command")
         val process = ProcessBuilder(su, "-c", command)
             .redirectErrorStream(true)
             .start()

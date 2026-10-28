@@ -10,6 +10,7 @@ object XfceMobileProfile {
     private const val PROFILE_MARKER = ".droiddesk-xfce-mobile-v14"
     private const val MONOSPACE_FONT = "DejaVu Sans Mono"
     private const val WALLPAPER_ASSET = "droiddesk/sunset-wave-wallpaper.jpg"
+    private const val REFIT_PROPERTY = "_DROIDDESK_REFIT"
 
     /** Height of the bottom launcher dock in X11 pixels; Android overlays sit above it. */
     const val DOCK_SIZE_PX = 88
@@ -23,6 +24,10 @@ object XfceMobileProfile {
         wallpaperFile: File,
         wallpaperPathInSession: String = wallpaperFile.absolutePath,
     ): Boolean {
+        // Runs on every start, outside the versioned profile, so existing homes get it too.
+        hidePackagedDevilspie2Autostart(homeDir)
+        installWindowFitting(homeDir)
+
         val marker = File(homeDir, PROFILE_MARKER)
         if (marker.exists()) return true
 
@@ -128,27 +133,8 @@ object XfceMobileProfile {
         )
     }
 
-    /** Maximizes every normal window so apps never open wider than a portrait phone screen. */
+    /** Starts devilspie2, which runs the window rules from [installWindowFitting]. */
     private fun installAutoMaximize(homeDir: File) {
-        File(homeDir, ".config/devilspie2/droiddesk-maximize.lua").apply {
-            parentFile?.mkdirs()
-            writeText(
-                """
-                -- Managed by DroidDesk: dialogs, menus and splash screens keep their own size.
-                if get_window_type() == "WINDOW_TYPE_NORMAL" then
-                  -- Fit the window to the screen first so "restore" returns to a size
-                  -- that is still usable on a phone, then open it maximized.
-                  if get_screen_geometry then
-                    local screen_w, screen_h = get_screen_geometry()
-                    local w = math.floor(screen_w * 0.9)
-                    local h = math.floor(screen_h * 0.8)
-                    set_window_geometry(math.floor((screen_w - w) / 2), math.floor((screen_h - h) / 2), w, h)
-                  end
-                  maximize()
-                end
-                """.trimIndent() + "\n",
-            )
-        }
         File(homeDir, ".config/autostart/droiddesk-automax.desktop").apply {
             parentFile?.mkdirs()
             writeText(
@@ -163,6 +149,84 @@ object XfceMobileProfile {
                 """.trimIndent() + "\n",
             )
         }
+    }
+
+    /**
+     * The devilspie2 package ships its own XDG autostart entry, so next to droiddesk-automax it
+     * ran twice. A user-level entry with the same name and Hidden=true turns the packaged one off.
+     */
+    private fun hidePackagedDevilspie2Autostart(homeDir: File) {
+        runCatching {
+            File(homeDir, ".config/autostart/devilspie2.desktop").apply {
+                if (exists() && !readText().contains("Managed by DroidDesk")) return
+                parentFile?.mkdirs()
+                writeText("[Desktop Entry]\n# Managed by DroidDesk: started by droiddesk-automax.desktop\nHidden=true\n")
+            }
+        }.onFailure { Log.w(TAG, "Could not hide the packaged devilspie2 autostart entry", it) }
+    }
+
+    /**
+     * Maximizes every normal window so apps never open wider than a portrait phone screen.
+     *
+     * Some apps resize themselves right after opening: Firefox restores its saved size and drops
+     * out of maximized. After rotating the phone a window can also be larger than the new screen.
+     * devilspie2 re-checks a window when its title changes or it gains focus: a window that left
+     * maximized right after opening is maximized once more, and any window that no longer fits is
+     * maximized. A window the user later sizes to fit is left alone.
+     *
+     * Written on every start so existing installs get rule fixes too.
+     */
+    private fun installWindowFitting(homeDir: File) {
+        runCatching {
+            val dir = File(homeDir, ".config/devilspie2").apply { mkdirs() }
+            // devilspie2 runs every other .lua file here when a window opens; this config limits
+            // the fit script to title-change and focus events.
+            val config = File(dir, "devilspie2.lua")
+            if (!config.exists() || config.readText().contains("Managed by DroidDesk")) {
+                config.writeText(
+                    """
+                    -- Managed by DroidDesk
+                    scripts_window_name_change = { "droiddesk-fit.lua" }
+                    scripts_window_focus = { "droiddesk-fit.lua" }
+                    """.trimIndent() + "\n",
+                )
+            }
+            File(dir, "droiddesk-maximize.lua").writeText(
+                """
+                -- Managed by DroidDesk: dialogs, menus and splash screens keep their own size.
+                if get_window_type() == "WINDOW_TYPE_NORMAL" then
+                  -- Moving a window that opened maximized would un-maximize it.
+                  if not get_window_is_maximized() then
+                    -- Fit the window to the screen first so "restore" returns to a size
+                    -- that is still usable on a phone, then open it maximized.
+                    local screen_w, screen_h = get_screen_geometry()
+                    local w = math.floor(screen_w * 0.9)
+                    local h = math.floor(screen_h * 0.8)
+                    set_window_geometry(math.floor((screen_w - w) / 2), math.floor((screen_h - h) / 2), w, h)
+                    maximize()
+                  end
+                  -- Lets droiddesk-fit.lua maximize it again if the app undoes this.
+                  set_window_property("$REFIT_PROPERTY", "1")
+                end
+                """.trimIndent() + "\n",
+            )
+            File(dir, "droiddesk-fit.lua").writeText(
+                """
+                -- Managed by DroidDesk: keep normal windows maximized or on screen.
+                if get_window_type() == "WINDOW_TYPE_NORMAL" and not get_window_is_maximized() then
+                  local screen_w, screen_h = get_screen_geometry()
+                  local x, y, w, h = get_window_geometry()
+                  if get_window_property("$REFIT_PROPERTY") == "1" then
+                    -- The app left maximized right after opening; maximize it once more.
+                    delete_window_property("$REFIT_PROPERTY")
+                    maximize()
+                  elseif x < 0 or y < 0 or x + w > screen_w or y + h > screen_h then
+                    maximize()
+                  end
+                end
+                """.trimIndent() + "\n",
+            )
+        }.onFailure { Log.w(TAG, "Could not install the window fitting rules", it) }
     }
 
     private fun windowManagerConfig(): String = """

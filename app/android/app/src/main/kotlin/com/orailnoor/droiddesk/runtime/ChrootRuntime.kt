@@ -58,6 +58,7 @@ class ChrootRuntime(private val context: Context) {
         val encoded = rootShell.exec(
             "chroot ${rootfsDir.absolutePath} /bin/bash -c " +
                 shellQuote("DISPLAY=:0 xclip -selection clipboard -o 2>/dev/null | base64 -w0"),
+            logCommand = false,
         ).trim()
         if (encoded.isEmpty()) "" else String(Base64.decode(encoded, Base64.DEFAULT))
     }.getOrNull()
@@ -67,6 +68,8 @@ class ChrootRuntime(private val context: Context) {
         rootShell.exec(
             "chroot ${rootfsDir.absolutePath} /bin/bash -c " +
                 shellQuote("printf %s ${shellQuote(encoded)} | base64 -d | DISPLAY=:0 xclip -selection clipboard -in"),
+            // The command carries the clipboard text; keep it out of logcat.
+            logCommand = false,
         )
         true
     }.getOrDefault(false)
@@ -367,6 +370,8 @@ class ChrootRuntime(private val context: Context) {
             return
         }
 
+        val lowMemory = LowMemoryProfile.isEnabled(context)
+
         // The profile is staged in app storage (see installChrootXfceMobileProfile), so its
         // version marker lives there rather than in the root-owned chroot home.
         val upgradingXfceProfile = desktopEnv == "xfce4" &&
@@ -381,6 +386,23 @@ class ChrootRuntime(private val context: Context) {
                     sessionRoot = rootfsDir,
                 )
             }.onFailure { Log.w(TAG, "Android desktop launchers could not be refreshed", it) }
+            runCatching {
+                rootShell.exec(
+                    LowMemoryProfile.prepareCommand(
+                        hostHome = File(rootfsDir, "root").absolutePath,
+                        sessionHome = "/root",
+                        enabled = lowMemory,
+                    ),
+                )
+            }.onFailure { Log.w(TAG, "Low memory desktop settings could not be prepared", it) }
+            val firefoxDir = File(rootfsDir, "usr/lib/firefox")
+            runCatching {
+                rootShell.exec(
+                    "if [ -e ${shellQuote("$firefoxDir/firefox")} ]; then " +
+                        "mkdir -p ${shellQuote("$firefoxDir/defaults/pref")} && " +
+                        "printf %s ${shellQuote(FirefoxDefaults.prefs)} > ${shellQuote("$firefoxDir/defaults/pref/droiddesk.js")}; fi",
+                )
+            }.onFailure { Log.w(TAG, "Firefox defaults could not be installed", it) }
         }
 
         ensureMounts()
@@ -425,6 +447,8 @@ class ChrootRuntime(private val context: Context) {
             # Termux runtime.  Load only the glibc compatibility shim built
             # for this rooted Ubuntu filesystem.
             export LD_PRELOAD=/usr/local/lib/libdroiddesk-close-range.so
+            # Low memory mode: fewer glibc malloc arenas per multithreaded app.
+            ${if (lowMemory) "export MALLOC_ARENA_MAX=2" else ""}
 
             # Source DroidDesk environment
             . /etc/profile.d/droiddesk-ha.sh 2>/dev/null || true

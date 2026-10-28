@@ -12,6 +12,12 @@ Connect your phone to a monitor and it becomes a Linux PC. Unplug it and your en
 > - **Source and licenses:** <https://github.com/orailnoor/DroidDesk>
 > - **Termux:X11 upstream:** <https://github.com/termux/termux-x11>
 
+> [!NOTE]
+> **Fork brahmasyahdan/droiddesk.** Fork ini berisi beberapa modifikasi untuk HP Android
+> RAM 4 GB tanpa keyboard/mouse fisik: Low memory mode, tombol mouse virtual, scroll satu jari,
+> jendela otomatis pas layar, dan Firefox tampil penuh. Daftar lengkapnya ada di
+> [CHANGES-FORK.md](CHANGES-FORK.md).
+
 ## Video
 
 [![Watch the video](https://img.youtube.com/vi/QCr4WWsfVv8/maxresdefault.jpg)](https://youtu.be/QCr4WWsfVv8)

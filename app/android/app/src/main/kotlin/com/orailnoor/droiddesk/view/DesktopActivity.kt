@@ -37,6 +37,7 @@ import com.termux.x11.LorieView
 import com.orailnoor.droiddesk.runtime.LinuxRuntime
 import com.orailnoor.droiddesk.runtime.ChrootRuntime
 import com.orailnoor.droiddesk.runtime.ClipboardSync
+import com.orailnoor.droiddesk.runtime.LowMemoryProfile
 import com.orailnoor.droiddesk.runtime.XfceMobileProfile
 import com.orailnoor.droiddesk.x11.X11ServiceClient
 import com.orailnoor.droiddesk.x11.X11InputController
@@ -66,6 +67,8 @@ class DesktopActivity : Activity() {
         collapsedControl?.animate()?.alpha(COLLAPSED_IDLE_ALPHA)?.setDuration(400)?.start()
     }
     private var extraKeysBar: ExtraKeysBar? = null
+    private var mouseButtonsBar: MouseButtonsBar? = null
+    private var mouseButtonsToggle: View? = null
     private var logoAnimator: FloatingLogoAnimator? = null
     private var surfaceCallback: SurfaceHolder.Callback? = null
     private var intentListenerThread: Thread? = null
@@ -115,10 +118,36 @@ class DesktopActivity : Activity() {
         }
     }
 
+    private val memoryWatchHandler = Handler(Looper.getMainLooper())
+    private var lastLowMemoryWarningAt = 0L
+
+    /** Android ends the whole Linux session when it runs out of memory; warn while there is still time. */
+    private val memoryWatch = object : Runnable {
+        override fun run() {
+            val activityManager = getSystemService(android.app.ActivityManager::class.java)
+            val memInfo = android.app.ActivityManager.MemoryInfo()
+            activityManager.getMemoryInfo(memInfo)
+            val nearlyFull = memInfo.lowMemory || memInfo.availMem < memInfo.threshold * 3 / 2
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (desktopRevealed && nearlyFull && now - lastLowMemoryWarningAt > LOW_MEMORY_WARNING_INTERVAL_MS) {
+                lastLowMemoryWarningAt = now
+                Log.w(TAG, "Memory nearly full: ${memInfo.availMem / (1024 * 1024)} MB available")
+                Toast.makeText(
+                    this@DesktopActivity,
+                    "Phone memory is almost full. Close Linux apps you are not using to keep the desktop running.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            memoryWatchHandler.postDelayed(this, MEMORY_WATCH_INTERVAL_MS)
+        }
+    }
+
     companion object {
         private const val TAG = "DesktopActivity"
         private const val COLLAPSED_IDLE_ALPHA = 0.4f
         private const val COLLAPSED_FADE_DELAY_MS = 3_000L
+        private const val MEMORY_WATCH_INTERVAL_MS = 15_000L
+        private const val LOW_MEMORY_WARNING_INTERVAL_MS = 180_000L
         private var current: java.lang.ref.WeakReference<DesktopActivity>? = null
 
         fun isOpen(): Boolean = current?.get()?.isFinishing == false
@@ -168,6 +197,8 @@ class DesktopActivity : Activity() {
         super.onResume()
         enableImmersiveMode()
         restartSessionIfStopped()
+        memoryWatchHandler.removeCallbacks(memoryWatch)
+        memoryWatchHandler.postDelayed(memoryWatch, MEMORY_WATCH_INTERVAL_MS)
     }
 
     private fun isSessionRunning(): Boolean =
@@ -183,6 +214,8 @@ class DesktopActivity : Activity() {
         desktopRevealed = false
         controlOverlay?.visibility = View.INVISIBLE
         collapsedControl?.visibility = View.INVISIBLE
+        mouseButtonsBar?.releaseAll()
+        mouseButtonsBar?.visibility = View.INVISIBLE
         loadingOverlay?.apply {
             alpha = 1f
             visibility = View.VISIBLE
@@ -201,10 +234,11 @@ class DesktopActivity : Activity() {
 
     private fun startClipboardSync() {
         if (clipboardSync == null) {
+            val intervalMs = LowMemoryProfile.clipboardIntervalMs(this)
             clipboardSync = if (sessionMode == "chroot") {
-                ClipboardSync(this, chrootRuntime::readLinuxClipboard, chrootRuntime::writeLinuxClipboard)
+                ClipboardSync(this, chrootRuntime::readLinuxClipboard, chrootRuntime::writeLinuxClipboard, intervalMs)
             } else {
-                ClipboardSync(this, linuxRuntime::readLinuxClipboard, linuxRuntime::writeLinuxClipboard)
+                ClipboardSync(this, linuxRuntime::readLinuxClipboard, linuxRuntime::writeLinuxClipboard, intervalMs)
             }
         }
         clipboardSync?.start()
@@ -212,6 +246,7 @@ class DesktopActivity : Activity() {
 
     override fun onPause() {
         clipboardSync?.stop()
+        memoryWatchHandler.removeCallbacks(memoryWatch)
         super.onPause()
     }
 
@@ -357,6 +392,11 @@ class DesktopActivity : Activity() {
         val keyboardButton = iconButton(R.drawable.ic_dd_keyboard, "Show keyboard").apply {
             setOnClickListener { showKeyboard() }
         }
+        val mouseButtonsButton = iconButton(R.drawable.ic_dd_mouse_buttons, "Show mouse buttons").apply {
+            alpha = if (inputController?.mouseButtonsShown == true) 1f else 0.55f
+            setOnClickListener { toggleMouseButtons() }
+        }
+        mouseButtonsToggle = mouseButtonsButton
         inputModeButton = Button(this).apply {
             isAllCaps = false
             minWidth = 0
@@ -386,6 +426,7 @@ class DesktopActivity : Activity() {
             val pad = (4 * density).toInt()
             setPadding(pad, pad, pad, pad)
             addView(keyboardButton, LinearLayout.LayoutParams(buttonHeight, buttonHeight))
+            addView(mouseButtonsButton, LinearLayout.LayoutParams(buttonHeight, buttonHeight))
             addView(inputModeButton, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, buttonHeight,
             ))
@@ -428,6 +469,47 @@ class DesktopActivity : Activity() {
         collapsedControl?.setOnTouchListener(assistiveTouchListener(collapsedControl!!))
         collapsedControl?.bringToFront()
         addExtraKeysBar()
+        // One row above the controls: on a portrait phone both bars do not fit side by side.
+        addMouseButtonsBar(overlayParams.bottomMargin + buttonHeight + (16 * density).toInt())
+    }
+
+    /** Floating Left / scroll / Right buttons, above the ☰ controls; the grip moves them. */
+    private fun addMouseButtonsBar(bottomMargin: Int) {
+        val bar = MouseButtonsBar(this) { inputController }.apply {
+            val shown = desktopRevealed && inputController?.mouseButtonsShown == true
+            visibility = if (shown) View.VISIBLE else View.INVISIBLE
+        }
+        bar.grip.setOnTouchListener(dragListener(bar))
+        mouseButtonsBar = bar
+        placeholder.addView(bar, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.START,
+        ).apply {
+            leftMargin = (8 * resources.displayMetrics.density).toInt()
+            this.bottomMargin = bottomMargin
+        })
+    }
+
+    private fun toggleMouseButtons() {
+        val controller = inputController ?: return
+        val show = !controller.mouseButtonsShown
+        controller.mouseButtonsShown = show
+        mouseButtonsToggle?.alpha = if (show) 1f else 0.55f
+        mouseButtonsBar?.apply {
+            if (!show) releaseAll()
+            visibility = if (show) View.VISIBLE else View.INVISIBLE
+            if (show) post { keepOnScreen(this) }
+        }
+        val message = when {
+            !show -> "Mouse buttons hidden"
+            controller.switchToTrackpadIfDirectTouch() -> {
+                inputModeButton?.let(::showInputMode)
+                "Mouse buttons on · switched to Trackpad"
+            }
+            else -> "Mouse buttons on"
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     /** Esc/Tab/Ctrl/Alt/arrow row that rides on top of the soft keyboard while it is open. */
@@ -778,6 +860,9 @@ class DesktopActivity : Activity() {
                     logoAnimator?.stop()
                     collapsedControl?.visibility = View.VISIBLE
                     collapsedControl?.bringToFront()
+                    if (inputController?.mouseButtonsShown == true) {
+                        mouseButtonsBar?.visibility = View.VISIBLE
+                    }
                     lorieView?.requestFocus()
                 }
                 ?.start()
@@ -831,6 +916,7 @@ class DesktopActivity : Activity() {
 
     override fun onDestroy() {
         collapsedFadeHandler.removeCallbacks(fadeCollapsedControl)
+        memoryWatchHandler.removeCallbacks(memoryWatch)
         clipboardSync?.stop()
         clipboardSync = null
         extraKeysBar?.releaseAll()

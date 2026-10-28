@@ -655,6 +655,17 @@ public class TouchInputHandler {
                 return true;
             }
 
+            // Touchscreen mode: a one-finger drag scrolls, as in any phone app. Long-press first to
+            // drag or select instead (mIsDragging). e1 is null for double-tap drags, which keep
+            // their old behaviour.
+            if (pointerCount == 1 && !mIsDragging && e1 != null
+                    && mInputStrategy instanceof InputStrategyInterface.SimulatedTouchInputStrategy) {
+                // Scroll the window under the finger, like the two-finger scroll above.
+                moveCursorToScreenPoint(e1.getX(), e1.getY());
+                mInputStrategy.onScroll(distanceX, distanceY);
+                return true;
+            }
+
             if (pointerCount != 1 || mSuppressCursorMovement)
                 return false;
 

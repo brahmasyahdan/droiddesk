@@ -1997,6 +1997,15 @@ class LinuxRuntime(private val context: Context) {
                 homeDir = homeDir,
                 python = File(prefixDir, "bin/python3"),
             )
+            runQuickCommand(
+                LowMemoryProfile.prepareCommand(
+                    hostHome = homeDir.absolutePath,
+                    sessionHome = homeDir.absolutePath,
+                    enabled = LowMemoryProfile.isEnabled(context),
+                ),
+            )
+            FirefoxDefaults.installPrefs(File(prefixDir, "lib/firefox"))
+            FirefoxDefaults.openProfilesMaximized(homeDir)
         }
 
         // X11ServerService owns this socket. Never delete it from the client runtime.

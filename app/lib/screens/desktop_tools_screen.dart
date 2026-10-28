@@ -256,7 +256,10 @@ class _DesktopToolsScreenState extends State<DesktopToolsScreen> {
                 borderRadius: BorderRadius.circular(DroidTheme.radiusMd),
                 child: child,
               ),
-              onReorderItem: (oldIndex, newIndex) {
+              // onReorder (not onReorderItem) so the app still builds on the Flutter
+              // versions pubspec allows; it reports newIndex before the removal.
+              onReorder: (oldIndex, newIndex) {
+                if (newIndex > oldIndex) newIndex -= 1;
                 final next = [..._dockPackages];
                 final value = next.removeAt(oldIndex);
                 next.insert(newIndex, value);
